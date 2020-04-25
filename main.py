@@ -82,9 +82,6 @@ class RoboTrader:
         df = pd.DataFrame(data, columns=columns)
         return df
 
-    #def trend_analyzer(self):
-
-
     ### API CALLS ###    
     
     def get_current_avg(self, symbol=None):
@@ -113,7 +110,6 @@ class RoboTrader:
         params['endTime'] = end_time if end_time else None
         params = {k:v for k,v in params.items() if v is not None}
         req = requests.get(url, params=params, headers=self.headers)
-        print(req.json())
         print(params)
         return self.candlestick_parser(req.json())
 
@@ -168,7 +164,6 @@ class RoboTrader:
         params['recvWindow'] = '5000'
         params['signature'] = self.generate_signature(self.params, secret_key)
 
-
     def place_order(self, side, order_type, time_in_force=None):
         url = self.exchange + "api/v3/order"
         params=self.params
@@ -182,22 +177,6 @@ class RoboTrader:
         params['quantity']
         req = requests.post(url, params=params, headers=self.headers)
 
-
-
 if __name__ == "__main__":
     robot = RoboTrader(api_key, 'BTCUSDT')
-    robot.get_candlestick('15m')
-    robot.save_historical_data(robot.candlesticks)
-
-    print(robot.date_to_ms("02-01-2018"))
-    print(robot.date_to_ms("01-02-2018"))
-    print(robot.date_to_ms('2018-01-02'))
-    print(robot.date_to_ms('2018-02-01'))
-    print(robot.date_to_ms("11 hours ago UTC"))
-    print(robot.date_to_ms("now UTC"))
-
-    print(robot.interval_to_ms("15m"))
-    print(robot.interval_to_ms("30m"))
-    print(robot.interval_to_ms("1w"))
-
-    print(robot.get_historical_data('BTCUSDT', '15m', 1000, "January 20, 2020", "March 22, 2020"))
+    print(robot.get_historical_data('BTCUSDT', '1m', 1000, "January 20, 2020", "March 22, 2020"))
