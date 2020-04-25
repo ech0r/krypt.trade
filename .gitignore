@@ -1,2 +1,3 @@
+.env/
+*.csv
 secrets.py
-algo-env/
