@@ -82,6 +82,9 @@ class RoboTrader:
         df = pd.DataFrame(data, columns=columns)
         return df
 
+    #def trend_analyzer(self):
+
+
     ### API CALLS ###    
     
     def get_current_avg(self, symbol=None):
@@ -127,8 +130,9 @@ class RoboTrader:
             end = start_ms + interval_ms if i == 0 else end + interval_ms
             start = start_ms if i == 0 else start + interval_ms 
             temp_data = self.get_candlestick(interval, symbol, limit, start, end)
-            print(temp_data)
-            if temp_data:
+            print(temp_data['close_time'].iloc[-1])
+            print(end_ms)
+            if not temp_data.empty:
                 # first run
                 if i == 0:
                     historical_data = temp_data
@@ -140,9 +144,10 @@ class RoboTrader:
                     time.sleep(1)
                 i += 1
                 continue
-            if len(temp_data) < limit:
+            #if temp_data['close_time'][-1] === end_ms:
                 # exit once we've gathered the last set of candlesticks
-                break
+                # print("Exit condition has been reached.")
+            #    break
             if i % 3 == 0:
                 time.sleep(1)
             i+=1
@@ -179,4 +184,4 @@ class RoboTrader:
 
 if __name__ == "__main__":
     robot = RoboTrader(api_key, 'BTCUSDT')
-    print(robot.get_historical_data('BTCUSDT', '1m', 1000, "January 20, 2020", "March 22, 2020"))
+    print(robot.get_historical_data('BTCUSDT', '15m', 1000, "January 20, 2020", "March 22, 2020"))
