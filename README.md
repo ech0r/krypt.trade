@@ -1,6 +1,6 @@
-Automated cryptocurrency trading via Binance
+## Automated cryptocurrency trading via Binance
 
-Dependencies:
+### Dependencies:
 
 1. Python 3.x.x
 
