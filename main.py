@@ -35,8 +35,8 @@ class RoboTrader:
             param_string += each_param
         return param_string
 
-    def save_historical_data(self, dataframe):
-        if os.path.isfile(self.historical_file_name):
+    def save_historical_data(self, dataframe, mode=None):
+        if mode == 'a':
             dataframe.to_csv(self.historical_file_name, mode='a', index=False, header=False)
         else:
             print("creating new historical_data.csv")
@@ -113,7 +113,6 @@ class RoboTrader:
         params['endTime'] = end_time if end_time else None
         params = {k:v for k,v in params.items() if v is not None}
         req = requests.get(url, params=params, headers=self.headers)
-        print(params)
         return self.candlestick_parser(req.json())
 
     def get_historical_data(self, symbol, interval, limit=None, start=None, end=None):
@@ -125,32 +124,28 @@ class RoboTrader:
         symbol_existed = False
         historical_data = None # holds Dataframe of past candlesticks
         i = 0
+        start = start_ms
         while True:
             print("Running loop %d" % (i+1))
-            end = start_ms + interval_ms if i == 0 else end + interval_ms
-            start = start_ms if i == 0 else start + interval_ms 
-            temp_data = self.get_candlestick(interval, symbol, limit, start, end)
-            print(temp_data['close_time'].iloc[-1])
-            print(end_ms)
+            temp_data = self.get_candlestick(interval, symbol, limit, start)
             if not temp_data.empty:
-                # first run
+                print(temp_data)
                 if i == 0:
                     historical_data = temp_data
-                # appends received data to our output data
-                historical_data.append(temp_data, ignore_index=True)
-            else: 
-                # if symbol doesn't exist yet, try next interval
-                if i % 3 == 0:
-                    time.sleep(1)
-                i += 1
-                continue
-            #if temp_data['close_time'][-1] === end_ms:
-                # exit once we've gathered the last set of candlesticks
-                # print("Exit condition has been reached.")
-            #    break
-            if i % 3 == 0:
-                time.sleep(1)
-            i+=1
+                else:
+                    historical_data = historical_data.append(temp_data)
+                # check if we have reached the end date
+                beginning_of_candlestick = temp_data['open_time'].values[0]
+                end_of_candlestick = temp_data['open_time'].values[-1]
+                if end_ms <= end_of_candlestick:
+                    break
+                start = temp_data['close_time'].values[-1] + 1
+            else:
+                start += interval_ms
+            i += 1
+        # not totally necessary - but if API returns duplicate rows, we can remove it with this.
+        historical_data.drop_duplicates(inplace=True)
+        historical_data = historical_data[historical_data.open_time <= end_ms]
         return historical_data
 
     def get_all_orders(self):
@@ -184,4 +179,5 @@ class RoboTrader:
 
 if __name__ == "__main__":
     robot = RoboTrader(api_key, 'BTCUSDT')
-    print(robot.get_historical_data('BTCUSDT', '15m', 1000, "January 20, 2020", "March 22, 2020"))
+    historical_data = robot.get_historical_data('BTCUSDT', '15m', 1000, "January 20, 2020", "March 25, 2020, 4pm")
+    robot.save_historical_data(historical_data)
