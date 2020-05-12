@@ -29,4 +29,4 @@
 
 7. ```pip install -r requirements.txt```
 
-8. Create secrets.py file containing ```api_key``` and ```secret_key```
+8. Create ``secrets.py`` file containing ```api_key``` and ```secret_key```
