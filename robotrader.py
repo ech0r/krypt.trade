@@ -122,7 +122,6 @@ class RoboTrader:
         params = {k:v for k,v in params.items() if v is not None}
         req = requests.get(url, params=params, headers=self.headers)
         x = self.candlestick_parser(req.json())
-        print(x)
         return x
 
     def get_historical_data(self, symbol, interval, limit=None, start=None, end=None):
@@ -139,11 +138,13 @@ class RoboTrader:
         # If only end is defined
         if not start_epoch and end_epoch:
             start_epoch = end_epoch - interval_ms
+            end_iter_epoch = end_epoch
         # If only start is defined
         if start_epoch and not end_epoch:
             # Calculate closest candlestick based on interval
-            end_epoch = interval_ms/limit
-            end_iter_epoch = end_epoch
+            timestamp = int(self.get_ms_timestamp())
+            end_epoch = timestamp - (timestamp % (interval_ms/limit))
+            end_iter_epoch = start_epoch + interval_ms
         # Dataframe that holds data as we iterate through the time series
         historical_data = None
         i = 0 # Counter
@@ -152,67 +153,40 @@ class RoboTrader:
             if i % 3 == 0:
                 time.sleep(1)
             if start_epoch: # If we are iterating through a time series starting at some point in the past
-                start_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_epoch))
-                end_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(end_iter_epoch))
-                print(f"{colors.OKBLUE}[INFO]: Gathering historical data from API, getting data for {start_time} -> {end_time} {colors.ENDC}")
+                start_time = datetime.fromtimestamp(start_epoch/1000).strftime('%Y-%m-%d %H:%M:%S') # datetime required timestamps to be in s, not ms.
+                end_time = datetime.fromtimestamp(end_iter_epoch/1000).strftime('%Y-%m-%d %H:%M:%S')
+                # Print information about what chunk we are gathering
+                print(f"{colors.OKBLUE}[INFO]: Gathering historical data from API, getting data for {start_time} -> {end_time} || Chunk #{i+1} {colors.ENDC}")
+                # Grab current chunk
                 temp_data = self.get_candlestick(interval, symbol, limit, start_epoch, end_iter_epoch)
-                if i == 0:
-                    historical_data = temp_data
-                else:
-                    historical_data.append(temp_data)
-            
-                if end_iter_epoch == end_epoch:
-                    break
-                # Increment our steps through the time series
-                end_iter_epoch += interval_ms
-                start_epoch = temp_data['close_time'].values[-1] + 1
-                i += 1
-            else: # We want most recent dataset.
-                timestamp = self.get_ms_timestamp()
-                start_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp - interval_ms))
-                end_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
-                print(f"{colors.OKBLUE}[INFO]: Gathering most recent data from API, getting data for {start_time} -> {end_time} {colors.ENDC}")
-                temp_data = self.get_candlestick(interval, symbol, limit)
-                historical_data = temp_data
-                break
-        return historical_data
-
-        limit = limit if limit else 1000
-        interval_ms = self.interval_to_ms(interval) * limit
-        start_ms = self.date_to_ms(start) if start else None
-        if start_ms:
-            itr_end_ms = start_ms + interval_ms
-        end_ms = self.date_to_ms(end) if end else None
-        historical_data = None # Holds Dataframe of past candlesticks
-        i = 0
-        while True:
-            # Pauses every 3rd loop, to be easy on the API.
-            if i % 3 == 0:
-                time.sleep(1)
-            print(f"{colors.OKBLUE}[INFO]: Gathering historical data from API, getting data for {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(start_ms))}. {colors.ENDC}")
-            temp_data = self.get_candlestick(interval, symbol, limit, start_ms, end_ms)
-            if not temp_data.empty:
+                # If first run, save to historical_data, otherwise append
+                print(temp_data)
                 if i == 0:
                     historical_data = temp_data
                 else:
                     historical_data = historical_data.append(temp_data)
-                # Check if we have reached the end date
-                beginning_of_candlestick = temp_data['open_time'].values[0]
-                end_of_candlestick = temp_data['open_time'].values[-1]
-                # Our exit criteria - have we reached the latest?
-                timestamp = int(self.get_ms_timestamp()) if not end_ms else end_ms
-                end_timestamp = timestamp - interval_ms
-                if timestamp <= end_of_candlestick:
+                # Check to see if we have reached the end of our time series
+                if end_iter_epoch >= end_epoch:
                     break
-                start_ms = temp_data['close_time'].values[-1] + 1
-            # If symbol doesn't exist, slide to next interval.
-            else:
-                start_ms += interval_ms
-            i += 1
-        # If API returns duplicate rows, we remove them
+                # Increment our steps through the time series
+                end_iter_epoch += interval_ms
+                start_epoch = temp_data['close_time'].values[-1] + 1
+                # Increment our counter
+                i += 1
+            else: # We want most recent dataset.
+                timestamp = int(self.get_ms_timestamp())
+                start_time = datetime.fromtimestamp((timestamp - interval_ms)/1000).strftime('%Y-%m-%d %H:%M:%S')
+                end_time = datetime.fromtimestamp(timestamp/1000).strftime('%Y-%m-%d %H:%M:%S')
+                # Print information about what chunk we are gathering
+                print(f"{colors.OKBLUE}[INFO]: Gathering most recent data from API, getting data for {start_time} -> {end_time} {colors.ENDC}")
+                # Grab current chunk 
+                temp_data = self.get_candlestick(interval, symbol, limit)
+                print(temp_data)
+                # Save to historical_data
+                historical_data = temp_data
+                break
         historical_data.drop_duplicates(inplace=True)
-        if end_ms:
-            historical_data = historical_data[historical_data.open_time <= end_ms]
+        historical_data = historical_data[historical_data.open_time <= end_epoch]
         return historical_data
 
     def get_all_orders(self):
@@ -278,7 +252,6 @@ class RoboTrader:
                 current_price = self.get_ticker()['price']
                 self.place_order('SELL', )
 
-
     '''
     def std_dev_reversal_strategy(self, data) :
 
@@ -307,6 +280,6 @@ class RoboTrader:
 
 if __name__ == "__main__":
     robot = RoboTrader(api_key, 'BTCUSDT')
-    historical_data = robot.get_historical_data('BTCUSDT', '1m', limit=1000, start="March 13, 2020", end="May 10, 2020 7pm")
+    historical_data = robot.get_historical_data('BTCUSDT', '1h', limit=1000)
     #print(robot.get_ticker()['price'])
     robot.save_historical_data(historical_data)
