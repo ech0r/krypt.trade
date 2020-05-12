@@ -2,6 +2,8 @@
 
 ![Gordon Gekko](https://upload.wikimedia.org/wikipedia/en/thumb/4/40/Gordon_Gekko.jpg/220px-Gordon_Gekko.jpg)
 
+"Money never sleeps"
+
 ### Dependencies:
 
 1. Python 3.x.x
