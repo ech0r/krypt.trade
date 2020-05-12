@@ -1,4 +1,5 @@
-## Python Library for Automated Cryptocurrency trading on Binance
+# RoboTrader
+## A Python Library for Automated Cryptocurrency trading on Binance
 
 ![Gordon Gekko](https://upload.wikimedia.org/wikipedia/en/thumb/4/40/Gordon_Gekko.jpg/220px-Gordon_Gekko.jpg)
 
