@@ -23,5 +23,3 @@
 6. ```.env/Scripts/activate```
 
 7. ```pip install -r requirements.txt```
-
-8. Run/use robotrader!
