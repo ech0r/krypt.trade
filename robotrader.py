@@ -5,6 +5,7 @@ import requests
 import dateparser
 import pytz
 import json
+import math
 import hmac
 import hashlib
 import pandas as pd
@@ -29,10 +30,12 @@ class RoboTrader:
     def __init__(self, api_key, symbol, trading_interval=None):
         self.headers = {'X-MBX-APIKEY': api_key}
         self.exchange = "https://api.binance.com/"
+        self.symbol = symbol
         self.params = {'symbol': symbol}
         self.candlesticks = None
         self.trading_interval=trading_interval
         self.historical_file_name = "historical_data.csv"
+        self.balances = {}
 
     ########################## HELPER FUNCTIONS #####################################################
 
@@ -93,18 +96,47 @@ class RoboTrader:
         df = pd.DataFrame(data, columns=columns)
         return df
 
+    def get_quantity(self, side, quantityPercent, price):
+        # Get wallet balances
+        self.get_balances()
+        # Grab assets from balances
+        assets = [self.balances[i] for i,x in enumerate(self.balances) if self.balances[i]['asset'] in self.symbol]
+        ordered_list = []
+        # Grab assets we are interested in base on pair specified in constructor
+        for i,x in enumerate(assets):
+            if self.symbol.startswith(x['asset']):
+                ordered_list.append(x)
+                ordered_list.append(assets[not i])
+        # If we are buying we want to check if there are orders in place that will interfere with the order we want to make
+        if side == 'BUY':
+            symbol = ordered_list[1]
+            # total quantity of assets in symbol wallet, both 'locked' and 'free', 'locked' means designated for a order that's in place. 
+            totalQuantity = ((float(symbol['free']) + float(symbol['locked']))*(quantityPercent/100))
+            if totalQuantity > float(symbol['free']): # If this is true, we don't have enough 'free' currency to make the order we want to make.
+                return False 
+            else:
+                return str(math.floor((totalQuantity/price)*1000000)/1000000.0) # If we can place order, returns amount we can buy rounded down to 6 decimal points
+        else:
+            symbol = ordered_list[0]
+            quantity = (float(symbol['free'])*quantityPercent)
+
     ######################### API CALLS #############################################################
     
+    def get_exchange_info(self):
+        url = self.exchange + "api/v3/exchangeInfo"
+        req = requests.get(url, headers=self.headers)
+        return req.json()
+
     def get_current_avg(self, symbol=None):
-        params = self.params
+        params = {'symbol' : self.symbol}
         if symbol:
             params['symbol'] = symbol
         url = self.exchange + "api/v3/avgPrice"
-        req = requests.get(url, params=self.params, headers=self.headers)
+        req = requests.get(url, params=params, headers=self.headers)
         return req.json()
 
     def get_ticker(self, symbol=None):
-        params = self.params
+        params = {'symbol' : self.symbol}
         if symbol:
             params['symbol'] = symbol
         url = self.exchange + "/api/v3/ticker/price"
@@ -113,9 +145,9 @@ class RoboTrader:
 
     def get_candlestick(self, interval, symbol=None, limit=None, start_time=None, end_time=None):
         url = self.exchange + "/api/v3/klines"
-        params = self.params
+        params = {}
         params['interval'] = interval
-        params['symbol'] = symbol if symbol else self.params['symbol']
+        params['symbol'] = symbol if symbol else self.symbol
         params['limit'] = limit if limit else None
         params['startTime'] = start_time if start_time else None
         params['endTime'] = end_time if end_time else None
@@ -191,32 +223,92 @@ class RoboTrader:
 
     def get_all_orders(self):
         url = self.exchange + "api/v3/allOrders"
-        params = self.params
+        params = {'symbol' : self.symbol}
         params['timestamp'] = self.get_ms_timestamp()
         params['recvWindow'] = '5000'
-        params['signature'] = self.generate_signature(self.params, secret_key)
+        params['signature'] = self.generate_signature(params, secret_key)
         req = requests.get(url, params=params, headers=self.headers)
         return req.json()
 
     def get_open_orders(self):
         url = self.exchange + "api/v3/openOrders"
-        params = self.params
+        params = {'symbol' : self.symbol}
         params['timestamp'] = self.get_ms_timestamp()
         params['recvWindow'] = '5000'
-        params['signature'] = self.generate_signature(self.params, secret_key)
+        params['signature'] = self.generate_signature(params, secret_key)
+        req = requests.get(url, params=params, headers=self.headers)
+        return req.json()
 
-    def place_order(self, side, order_type, time_in_force=None, stopPrice=None):
-        url = self.exchange + "api/v3/order/test"
-        params=self.params
-        if time_in_force:
-            params['timeInForce'] = time_in_force
+    def query_order(self, orderId):
+        url = self.exchange + "/api/v3/order"
+        params = {'symbol' : self.symbol}
+        params['orderId'] = orderId
         params['timestamp'] = self.get_ms_timestamp()
         params['recvWindow'] = '5000'
-        params['signature'] = self.generate_signature(self.params, secret_key)
+        params['signature'] = self.generate_signature(params, secret_key)
+        req = requests.get(url, params=params, headers=self.headers)
+        return req.json()
+
+    def get_balances(self, symbol=None):
+        url = self.exchange + "/api/v3/account"
+        params = {}
+        params['recvWindow'] = '5000'
+        params['timestamp'] = self.get_ms_timestamp()
+        params['signature'] = self.generate_signature(params, secret_key)
+        req = requests.get(url, params=params, headers=self.headers)
+        self.balances = req.json()['balances']
+        for x in self.balances:
+            if symbol and x['asset'] == symbol:
+                return x
+        return None
+
+    def cancel_order(self, clientOrderId):
+        url = self.exchange + "/api/v3/order"
+        params = {'symbol' : self.symbol}
+        params['timestamp'] = self.get_ms_timestamp()
+        params['recvWindow'] = '5000'
+        params['origClientOrderId'] = clientOrderId
+        params['signature'] = self.generate_signature(params, secret_key)
+        req = requests.delete(url, params=params, headers=self.headers)
+        return(req.json())
+
+    def cancel_all_orders(self):
+        open_orders = self.get_open_orders()
+        for x in open_orders:
+            if x['symbol'] == self.params['symbol']:
+                print(self.cancel_order(x['clientOrderId']))
+
+    def cancel_all_open_orders(self):
+        url = self.exchange + "/api/v3/openOrders"
+        params = {'symbol' : self.symbol}
+        params['timestamp'] = self.get_ms_timestamp()
+        params['recvWindow'] = '5000'
+        params['signature'] = self.generate_signature(params, secret_key)
+        req = requests.delete(url, params=params, headers=self.headers)
+        return(req.json())
+
+    def place_order(self, side, orderType, quantityPercent=None, price=None, timeInForce=None, stopPrice=None):
+        quantity = self.get_quantity('BUY', 100, 8321.28)
+        if not quantity:
+            print("Couldn't place order, canceling existing orders.")
+            self.cancel_all_orders()
+            quantity = self.get_quantity('BUY', 100, 8321.28)
+        url = self.exchange + "api/v3/order"
+        params = {'symbol' : self.symbol}
+        if timeInForce:
+            params['timeInForce'] = timeInForce
+        else:
+            params['timeInForce'] = "GTC"
+        params['timestamp'] = self.get_ms_timestamp()
+        params['recvWindow'] = "5000"
         params['side'] = side
-        params['type'] = order_type
-        params['quantity']
+        params['type'] = orderType
+        params['quantity'] = quantity
+        params['price'] = '8321.28'
+        params['signature'] = self.generate_signature(params, secret_key)
+        print(params)
         req = requests.post(url, params=params, headers=self.headers)
+        return req.json()
 
     ################################# STRATEGY DEFINITIONS ##########################################
 
@@ -242,10 +334,10 @@ class RoboTrader:
             # Now we know the volume AND price are over our threshold - we want to FOMO in and ride the wave, up or down
             # Now that we know the amplitude of the move, we need to determine its direction
             if percent_price_change > 0:
-                # Movement is in the positive direction - we need to buy.
+                # Movement is in the positive direction - we need to buy in.
                 # TODO: Buy at current price.
                 current_price = self.get_ticker()['price']
-                self.place_order('BUY', )
+                self.place_order('BUY',  )
             else:
                 # Movement is in the negative direction - we need to sell.
                 # TODO: Sell at current price.
@@ -280,6 +372,14 @@ class RoboTrader:
 
 if __name__ == "__main__":
     robot = RoboTrader(api_key, 'BTCUSDT')
-    historical_data = robot.get_historical_data('BTCUSDT', '1h', limit=1000)
+    #print(robot.get_balance('USDT'))
+    #print(robot.get_balance('BTC'))
+    #print(robot.get_open_orders())
+    #print(robot.cancel_all_orders())
+    #print(robot.get_balance('USDT'))
+    print(robot.place_order(side='BUY', orderType='LIMIT'))
+    #print(robot.place_order('BUY', 'LIMIT', timeInForce='GTC', ))
+    #print(robot.get_open_orders())
+    #historical_data = robot.get_historical_data('BTCUSDT', '1h', limit=1000)
     #print(robot.get_ticker()['price'])
-    robot.save_historical_data(historical_data)
+    #robot.save_historical_data(historical_data)
