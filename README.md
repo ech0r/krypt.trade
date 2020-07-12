@@ -19,7 +19,7 @@
 
 2. ```git clone https://github.com/ech0r/RoboTrader.git```
 
-3. ```cd RoboTrader```
+3. ```cd krypt.trade```
 
 4. ```pip install virtualenv```
 
